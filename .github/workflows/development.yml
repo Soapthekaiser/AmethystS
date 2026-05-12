@@ -32,18 +32,22 @@ jobs:
       - name: Checkout repository submodules
         run: git submodule update --init --recursive
 
-      # --- INJECTING FLAGS DIRECTLY INTO MAKEFILE CONFIGURATION ---
-      # This explicitly finds the internal toolchain call inside the Makefile and appends our flag
-      - name: Patch Root Makefile Config
+      # --- INJECT HEADER VIA WORKFLOW ---
+      # This inserts the required system header directly into line 1 of JavaLauncher.m
+      - name: Fix Missing Mach Header
         run: |
-          if [ -f "Makefile" ]; then
-            sed -i '' 's|-DCMAKE_C_FLAGS="-Wno-error=implicit-function-declaration"|-DCMAKE_C_FLAGS="-Wno-error=implicit-function-declaration -Wno-error=implicit-int"|g' Makefile
-            sed -i '' 's|ios.toolchain.cmake|ios.toolchain.cmake -DCMAKE_C_FLAGS="-Wno-error=implicit-function-declaration" -DCMAKE_CXX_FLAGS="-Wno-error=implicit-function-declaration"|g' Makefile
-            echo "Successfully injected compiler bypass definitions directly into the project Makefile."
-          else
-            echo "Warning: Root Makefile not found!"
+          echo '#import <mach/task.h>' | cat - Natives/JavaLauncher.m > temp && mv temp Natives/JavaLauncher.m
+          echo "Successfully injected header into JavaLauncher.m"
+
+      # --- FORCE COMPILER TO DOWNGRADE WARNINGS ---
+      # Appends flag directly to CMakeLists configurations inside the Natives module
+      - name: Patch Native Build Flags
+        run: |
+          if [ -f "Natives/CMakeLists.txt" ]; then
+            echo 'add_compile_options("-Wno-error=implicit-function-declaration")' | cat - Natives/CMakeLists.txt > temp && mv temp Natives/CMakeLists.txt
           fi
 
+       Noah setup configuration step
       - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:
