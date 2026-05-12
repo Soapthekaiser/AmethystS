@@ -19,7 +19,8 @@ jobs:
           - platform: 2
             platform_name: ios
     
-    runs-on: J316sAP
+    # Switched from custom runner to GitHub's official Mac runner
+    runs-on: macos-latest
     steps:
       - name: Remove work folders
         run: |
@@ -32,17 +33,21 @@ jobs:
       - name: Checkout repository submodules
         run: git submodule update --init --recursive
 
+      - name: Install dependencies
+        run: |
+          # Ensures gmake is available on the GitHub runner
+          brew install make
+
       - name: Build for ${{ matrix.platform_name }}
         run: |
-          export PATH=/opt/homebrew/bin:$PATH
+          # Add Homebrew to path (handles both Intel and Apple Silicon runners)
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
           export SLIMMED=1
           
           # --- CUSTOM DYLIB INJECTION START ---
           echo "Injecting custom dylibs from repository 'frameworks' folder..."
-          # Ensure the destination folder exists in the Amethyst source tree
           mkdir -p Natives/resources/Frameworks/
           
-          # Copy your dylibs from your uploaded 'frameworks' folder
           if [ -d "frameworks" ]; then
             cp frameworks/*.dylib Natives/resources/Frameworks/
             echo "Successfully copied dylibs to Natives/resources/Frameworks/"
