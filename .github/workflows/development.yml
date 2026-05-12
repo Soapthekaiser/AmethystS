@@ -32,11 +32,13 @@ jobs:
       - name: Checkout repository submodules
         run: git submodule update --init --recursive
 
-      # --- AUTOMATED PATCH STEP ---
-      # This automatically fixes the missing header in the original file during the build
+      # --- RE-ENGINEERED PATCH STEP ---
+      # This explicitly forces the required headers to the absolute top line of the file.
       - name: Patch JavaLauncher Header
         run: |
-          sed -i '' 's|#import "ios_uikit_bridge.h"|#import <mach/task.h>\n#import "ios_uikit_bridge.h"|' Natives/JavaLauncher.m
+          echo '#import <mach/task.h>' | cat - Natives/JavaLauncher.m > temp && mv temp Natives/JavaLauncher.m
+          echo '#import <mach/mach.h>' | cat - Natives/JavaLauncher.m > temp && mv temp Natives/JavaLauncher.m
+          echo "Successfully forced headers onto JavaLauncher.m"
 
       - name: Set up JDK 8
         uses: actions/setup-java@v4
