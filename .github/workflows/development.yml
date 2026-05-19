@@ -27,10 +27,7 @@ jobs:
 
     - name: Install System Dependencies
       run: |
-        # Install standard build utility systems, adding 'make' explicitly
         brew install automake autoconf libtool ldid wget make
-        
-        # FIX: Create the directory and symlink that Xcode's build target hardcodes
         sudo mkdir -p /usr/local/bin
         sudo ln -s /opt/homebrew/bin/gmake /usr/local/bin/gmake
         echo "Created gmake compatibility link at /usr/local/bin/gmake"
@@ -73,7 +70,28 @@ jobs:
     - name: Package App into IPA
       run: |
         mkdir -p Payload
-        cp -r ~/Library/Developer/Xcode/DerivedData/Amethyst-*/Build/Products/Release-iphoneos/*.app Payload/
+        
+        # Search for the built .app bundle in common Makefile output paths
+        if [ -d "bin/release-iphoneos/Angel Aura Amethyst.app" ]; then
+          cp -r "bin/release-iphoneos/Angel Aura Amethyst.app" Payload/
+        elif [ -d "bin/release-iphoneos/PojavLauncher.app" ]; then
+          cp -r "bin/release-iphoneos/PojavLauncher.app" Payload/
+        elif ls bin/*.app 1> /dev/null 2>&1; then
+          cp -r bin/*.app Payload/
+        elif ls bin/release-iphoneos/*.app 1> /dev/null 2>&1; then
+          cp -r bin/release-iphoneos/*.app Payload/
+        else
+          echo "Fallback: Checking standard Xcode location..."
+          cp -r ~/Library/Developer/Xcode/DerivedData/Amethyst-*/Build/Products/Release-iphoneos/*.app Payload/ || true
+        fi
+        
+        # Verify if we found an app bundle to zip
+        if [ -z "$(ls -A Payload)" ]; then
+          echo "Error: No compiled .app bundle found anywhere! Printing workspace files for debugging:"
+          find . -name "*.app" -type d
+          exit 1
+        fi
+        
         zip -r Amethyst.ipa Payload
 
     - name: Upload Finished IPA
