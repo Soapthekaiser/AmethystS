@@ -26,14 +26,24 @@ jobs:
 
     - name: Find Scheme and Build Xcode Project
       run: |
-        # 1. Automatically extract the first valid scheme name from the project
-        SCHEME_NAME=$(xcodebuild -project Amethyst.xcodeproj -list | sed -n '/Schemes:/,$p' | sed -1,2d | sed 's/^[[:space:]]*//' | head -n 1)
+        # 1. Print out the full project structure to the logs for safety
+        echo "=== Project Schemes Available ==="
+        xcodebuild -project Amethyst.xcodeproj -list
+        
+        # 2. Extract the correct scheme line cleanly using awk
+        SCHEME_NAME=$(xcodebuild -project Amethyst.xcodeproj -list | awk '/Schemes:/{flag=1;next} /^$/{flag=0} flag' | sed 's/^[[:space:]]*//' | head -n 1)
         echo "Detected Scheme Name: '$SCHEME_NAME'"
         
-        # 2. Save it to the environment so the packaging step can read it
+        # 3. Fail early if no scheme was parsed to prevent blank-name errors
+        if [ -z "$SCHEME_NAME" ]; then
+          echo "Error: Could not automatically detect an Xcode scheme!"
+          exit 1
+        fi
+        
+        # 4. Save to environment for the packaging step
         echo "TARGET_SCHEME=$SCHEME_NAME" >> $GITHUB_ENV
         
-        # 3. Build using the discovered scheme name
+        # 5. Execute compilation
         xcodebuild -project Amethyst.xcodeproj \
                    -scheme "$SCHEME_NAME" \
                    -configuration Release \
@@ -45,7 +55,7 @@ jobs:
     - name: Package App into IPA
       run: |
         mkdir -p Payload
-        # Copy the compiled .app file dynamically using the detected target name
+        # Copy the compiled app folder using a wild card
         cp -r ~/Library/Developer/Xcode/DerivedData/Amethyst-*/Build/Products/Release-iphoneos/*.app Payload/
         zip -r Amethyst.ipa Payload
 
