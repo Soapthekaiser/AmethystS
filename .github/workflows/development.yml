@@ -18,14 +18,19 @@ jobs:
     - name: Set up Xcode Version
       run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
+    - name: Set up JDK 8
+      uses: actions/setup-java@v4
+      with:
+        java-version: '8'
+        distribution: 'temurin' # Uses the stable, community-backed Eclipse Temurin JDK 8 binary
+
     - name: Install System Dependencies
       run: |
-        # Install build dependencies often required by the underlying Makefile layout
-        brew install automake autoconf libtool openjdk
+        brew install automake autoconf libtool
 
     - name: Run Project Makefile
       run: |
-        # Pre-build native components (LWJGL wrappers, GL4ES, runtime modules)
+        # The environment now correctly detects JDK 8
         make
 
     - name: Cache Build Dependencies
