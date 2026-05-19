@@ -69,30 +69,10 @@ jobs:
 
     - name: Package App into IPA
       run: |
-        mkdir -p Payload
-        
-        # Search for the built .app bundle in common Makefile output paths
-        if [ -d "bin/release-iphoneos/Angel Aura Amethyst.app" ]; then
-          cp -r "bin/release-iphoneos/Angel Aura Amethyst.app" Payload/
-        elif [ -d "bin/release-iphoneos/PojavLauncher.app" ]; then
-          cp -r "bin/release-iphoneos/PojavLauncher.app" Payload/
-        elif ls bin/*.app 1> /dev/null 2>&1; then
-          cp -r bin/*.app Payload/
-        elif ls bin/release-iphoneos/*.app 1> /dev/null 2>&1; then
-          cp -r bin/release-iphoneos/*.app Payload/
-        else
-          echo "Fallback: Checking standard Xcode location..."
-          cp -r ~/Library/Developer/Xcode/DerivedData/Amethyst-*/Build/Products/Release-iphoneos/*.app Payload/ || true
-        fi
-        
-        # Verify if we found an app bundle to zip
-        if [ -z "$(ls -A Payload)" ]; then
-          echo "Error: No compiled .app bundle found anywhere! Printing workspace files for debugging:"
-          find . -name "*.app" -type d
-          exit 1
-        fi
-        
-        zip -r Amethyst.ipa Payload
+        # The build environment already structured the Payload folder inside artifacts/
+        # Move into that directory and compress it directly
+        cd artifacts
+        zip -r ../Amethyst.ipa Payload
 
     - name: Upload Finished IPA
       uses: actions/upload-artifact@v4
