@@ -216,11 +216,36 @@ void registerOpenHandler(JNIEnv *env) {
 
 // JNI_OnLoad
 void JNI_OnLoadGLFW() {
-    vmGlfwClass = (*runtimeJNIEnvPtr)->NewGlobalRef(runtimeJNIEnvPtr, (*runtimeJNIEnvPtr)->FindClass(runtimeJNIEnvPtr, "org/lwjgl/glfw/GLFW"));
+    NSLog(@"[Amethyst-Debug] Entering JNI_OnLoadGLFW for LWJGL 3.4.1");
+    
+    jclass localClass = (*runtimeJNIEnvPtr)->FindClass(runtimeJNIEnvPtr, "org/lwjgl/glfw/GLFW");
+    if ((*runtimeJNIEnvPtr)->ExceptionOccurred(runtimeJNIEnvPtr) || localClass == NULL) {
+        NSLog(@"[Amethyst-Critical] Failed to find class org/lwjgl/glfw/GLFW!");
+        (*runtimeJNIEnvPtr)->ExceptionClear(runtimeJNIEnvPtr);
+        return;
+    }
+    
+    vmGlfwClass = (*runtimeJNIEnvPtr)->NewGlobalRef(runtimeJNIEnvPtr, localClass);
+    
     method_internalWindowSizeChanged = (*runtimeJNIEnvPtr)->GetStaticMethodID(runtimeJNIEnvPtr, vmGlfwClass, "internalWindowSizeChanged", "(JII)V");
+    if ((*runtimeJNIEnvPtr)->ExceptionOccurred(runtimeJNIEnvPtr) || method_internalWindowSizeChanged == NULL) {
+        NSLog(@"[Amethyst-Warning] Failed to find internalWindowSizeChanged(JII)V. Signature might have changed in LWJGL 3.4.1!");
+        (*runtimeJNIEnvPtr)->ExceptionClear(runtimeJNIEnvPtr);
+    }
+
     jfieldID field_keyDownBuffer = (*runtimeJNIEnvPtr)->GetStaticFieldID(runtimeJNIEnvPtr, vmGlfwClass, "keyDownBuffer", "Ljava/nio/ByteBuffer;");
+    if ((*runtimeJNIEnvPtr)->ExceptionOccurred(runtimeJNIEnvPtr) || field_keyDownBuffer == NULL) {
+        NSLog(@"[Amethyst-Warning] Failed to find field keyDownBuffer!");
+        (*runtimeJNIEnvPtr)->ExceptionClear(runtimeJNIEnvPtr);
+        return;
+    }
+
     jobject keyDownBufferJ = (*runtimeJNIEnvPtr)->GetStaticObjectField(runtimeJNIEnvPtr, vmGlfwClass, field_keyDownBuffer);
-    keyDownBuffer = (*runtimeJNIEnvPtr)->GetDirectBufferAddress(runtimeJNIEnvPtr, keyDownBufferJ);
+    if (keyDownBufferJ != NULL) {
+        keyDownBuffer = (*runtimeJNIEnvPtr)->GetDirectBufferAddress(runtimeJNIEnvPtr, keyDownBufferJ);
+    } else {
+        NSLog(@"[Amethyst-Warning] keyDownBufferJ object is NULL!");
+    }
 }
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
