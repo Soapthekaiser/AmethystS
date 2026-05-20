@@ -1,3 +1,4 @@
+cat > /mnt/user-data/outputs/input_bridge_v3.m << 'ENDOFFILE'
 /*
  * V3 input bridge implementation.
  *
@@ -214,38 +215,75 @@ void registerOpenHandler(JNIEnv *env) {
     }
 }
 
-// JNI_OnLoad
-void JNI_OnLoadGLFW() {
-    NSLog(@"[Amethyst-Debug] Entering JNI_OnLoadGLFW for LWJGL 3.4.1");
-    
-    jclass localClass = (*runtimeJNIEnvPtr)->FindClass(runtimeJNIEnvPtr, "org/lwjgl/glfw/GLFW");
-    if ((*runtimeJNIEnvPtr)->ExceptionOccurred(runtimeJNIEnvPtr) || localClass == NULL) {
+// Lazy GLFW class init - called from the first GLFW callback registration,
+// by which point the GLFW class is guaranteed to be on the classpath.
+// FindClass fails at JNI_OnLoad time because the LWJGL classloader hasn't
+// loaded org/lwjgl/glfw/GLFW yet. Using the thread's context classloader
+// works around this.
+static BOOL glfwClassInitialized = NO;
+
+void JNI_OnLoadGLFW_lazy(JNIEnv* env) {
+    if (glfwClassInitialized) return;
+    NSLog(@"[Amethyst-Debug] Entering JNI_OnLoadGLFW (lazy) for LWJGL 3.4.1");
+
+    // Use the thread's context classloader instead of bare FindClass,
+    // which fails when called from a non-JVM-started thread or before
+    // the class has been loaded by LWJGL's classloader.
+    jclass threadClass = (*env)->FindClass(env, "java/lang/Thread");
+    if ((*env)->ExceptionOccurred(env) || threadClass == NULL) {
+        (*env)->ExceptionClear(env);
+        NSLog(@"[Amethyst-Critical] JNI_OnLoadGLFW_lazy: Failed to find java/lang/Thread!");
+        return;
+    }
+    jmethodID currentThread = (*env)->GetStaticMethodID(env, threadClass, "currentThread", "()Ljava/lang/Thread;");
+    jmethodID getContextClassLoader = (*env)->GetMethodID(env, threadClass, "getContextClassLoader", "()Ljava/lang/ClassLoader;");
+    jobject thread = (*env)->CallStaticObjectMethod(env, threadClass, currentThread);
+    jobject classLoader = (*env)->CallObjectMethod(env, thread, getContextClassLoader);
+
+    jclass classLoaderClass = (*env)->FindClass(env, "java/lang/ClassLoader");
+    jmethodID loadClass = (*env)->GetMethodID(env, classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+
+    jstring className = (*env)->NewStringUTF(env, "org/lwjgl/glfw/GLFW");
+    jclass localClass = (jclass)(*env)->CallObjectMethod(env, classLoader, loadClass, className);
+    (*env)->DeleteLocalRef(env, className);
+
+    if ((*env)->ExceptionOccurred(env) || localClass == NULL) {
         NSLog(@"[Amethyst-Critical] Failed to find class org/lwjgl/glfw/GLFW!");
-        (*runtimeJNIEnvPtr)->ExceptionClear(runtimeJNIEnvPtr);
+        (*env)->ExceptionClear(env);
         return;
     }
-    
-    vmGlfwClass = (*runtimeJNIEnvPtr)->NewGlobalRef(runtimeJNIEnvPtr, localClass);
-    
-    method_internalWindowSizeChanged = (*runtimeJNIEnvPtr)->GetStaticMethodID(runtimeJNIEnvPtr, vmGlfwClass, "internalWindowSizeChanged", "(JII)V");
-    if ((*runtimeJNIEnvPtr)->ExceptionOccurred(runtimeJNIEnvPtr) || method_internalWindowSizeChanged == NULL) {
+
+    vmGlfwClass = (*env)->NewGlobalRef(env, localClass);
+    runtimeJNIEnvPtr = env;
+
+    method_internalWindowSizeChanged = (*env)->GetStaticMethodID(env, vmGlfwClass, "internalWindowSizeChanged", "(JII)V");
+    if ((*env)->ExceptionOccurred(env) || method_internalWindowSizeChanged == NULL) {
         NSLog(@"[Amethyst-Warning] Failed to find internalWindowSizeChanged(JII)V. Signature might have changed in LWJGL 3.4.1!");
-        (*runtimeJNIEnvPtr)->ExceptionClear(runtimeJNIEnvPtr);
+        (*env)->ExceptionClear(env);
     }
 
-    jfieldID field_keyDownBuffer = (*runtimeJNIEnvPtr)->GetStaticFieldID(runtimeJNIEnvPtr, vmGlfwClass, "keyDownBuffer", "Ljava/nio/ByteBuffer;");
-    if ((*runtimeJNIEnvPtr)->ExceptionOccurred(runtimeJNIEnvPtr) || field_keyDownBuffer == NULL) {
+    jfieldID field_keyDownBuffer = (*env)->GetStaticFieldID(env, vmGlfwClass, "keyDownBuffer", "Ljava/nio/ByteBuffer;");
+    if ((*env)->ExceptionOccurred(env) || field_keyDownBuffer == NULL) {
         NSLog(@"[Amethyst-Warning] Failed to find field keyDownBuffer!");
-        (*runtimeJNIEnvPtr)->ExceptionClear(runtimeJNIEnvPtr);
+        (*env)->ExceptionClear(env);
         return;
     }
 
-    jobject keyDownBufferJ = (*runtimeJNIEnvPtr)->GetStaticObjectField(runtimeJNIEnvPtr, vmGlfwClass, field_keyDownBuffer);
+    jobject keyDownBufferJ = (*env)->GetStaticObjectField(env, vmGlfwClass, field_keyDownBuffer);
     if (keyDownBufferJ != NULL) {
-        keyDownBuffer = (*runtimeJNIEnvPtr)->GetDirectBufferAddress(runtimeJNIEnvPtr, keyDownBufferJ);
+        keyDownBuffer = (*env)->GetDirectBufferAddress(env, keyDownBufferJ);
     } else {
         NSLog(@"[Amethyst-Warning] keyDownBufferJ object is NULL!");
     }
+
+    glfwClassInitialized = YES;
+    NSLog(@"[Amethyst-Debug] JNI_OnLoadGLFW completed successfully");
+}
+
+// Legacy stub - kept so JNI_OnLoad call site compiles unchanged.
+// Real init now happens lazily from the first GLFW callback registration.
+void JNI_OnLoadGLFW() {
+    // no-op: class not yet loaded at this point, lazy init handles it
 }
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -269,6 +307,7 @@ void JNI_OnUnload(JavaVM* vm, void* reserved) {
 
 #define ADD_CALLBACK_WWIN(NAME) \
 JNIEXPORT jlong JNICALL Java_org_lwjgl_glfw_GLFW_nglfwSet##NAME##Callback(JNIEnv * env, jclass cls, jlong window, jlong callbackptr) { \
+    JNI_OnLoadGLFW_lazy(env); \
     void** oldCallback = (void**) &GLFW_invoke_##NAME; \
     GLFW_invoke_##NAME = (GLFW_invoke_##NAME##_func*) (uintptr_t) callbackptr; \
     return (jlong) (uintptr_t) *oldCallback; \
