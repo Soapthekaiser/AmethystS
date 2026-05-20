@@ -166,10 +166,10 @@ void registerOpenHandler(JNIEnv *env) {
     };
     (*env)->RegisterNatives(env, cls, forkAndExecMethod, 1);
 
-    // (Java 17 only) Hook isAlive0
+    // Hook isAlive0
     cls = (*env)->FindClass(env, "java/lang/ProcessHandleImpl");
     if ((*env)->ExceptionOccurred(env)) {
-        // Java 8
+        // Java 8 fallback
         (*env)->ExceptionClear(env);
     } else {
         orig_ProcessHandleImpl_isAlive0 = dlsym(RTLD_DEFAULT, "Java_java_lang_ProcessHandleImpl_isAlive0");
@@ -179,32 +179,39 @@ void registerOpenHandler(JNIEnv *env) {
         (*env)->RegisterNatives(env, cls, isAlive0Method, 1);
     }
 
-    // Register CTCClipboard natives
+    // Register CTCClipboard natives (with Java 25 / modern Cacio support)
     cls = (*env)->FindClass(env, "net/java/openjdk/cacio/ctc/CTCClipboard");
     if ((*env)->ExceptionOccurred(env)) {
-        // Java 17
-        (*env)->ExceptionClear(env);
+        (*env)->ExceptionClear(env); // Clear error state before looking up fallback path
         cls = (*env)->FindClass(env, "com/github/caciocavallosilano/cacio/ctc/CTCClipboard");
     }
-    JNINativeMethod clipboardMethods[] = {
-        {"nQuerySystemClipboard", "()V", (void *)&CTCClipboard_nQuerySystemClipboard},
-        {"nPutClipboardData", "(Ljava/lang/String;Ljava/lang/String;)V", (void *)&CTCClipboard_nPutClipboardData}
-    };
-    (*env)->RegisterNatives(env, cls, clipboardMethods, 2);
+    
+    if (cls != NULL && !(*env)->ExceptionOccurred(env)) {
+        JNINativeMethod clipboardMethods[] = {
+            {"nQuerySystemClipboard", "()V", (void *)&CTCClipboard_nQuerySystemClipboard},
+            {"nPutClipboardData", "(Ljava/lang/String;Ljava/lang/String;)V", (void *)&CTCClipboard_nPutClipboardData}
+        };
+        (*env)->RegisterNatives(env, cls, clipboardMethods, 2);
+    } else if ((*env)->ExceptionOccurred(env)) {
+        (*env)->ExceptionClear(env);
+    }
 
-    // Register CTCDesktopPeer natives
+    // Register CTCDesktopPeer natives (with Java 25 / modern Cacio support)
     cls = (*env)->FindClass(env, "net/java/openjdk/cacio/ctc/CTCDesktopPeer");
     if ((*env)->ExceptionOccurred(env)) {
-        // Java 17, not available
-        //(*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
-        return;
+        (*env)->ExceptionClear(env); // Clear error state before looking up fallback path
+        cls = (*env)->FindClass(env, "com/github/caciocavallosilano/cacio/ctc/CTCDesktopPeer");
     }
-    JNINativeMethod peerOpenMethods[] = {
-        {"openFile", "(Ljava/lang/String;)V", (void *)&CTCDesktopPeer_openGlobal},
-        {"openUri", "(Ljava/lang/String;)V", (void *)&CTCDesktopPeer_openGlobal}
-    };
-    (*env)->RegisterNatives(env, cls, peerOpenMethods, 2);
+    
+    if (cls != NULL && !(*env)->ExceptionOccurred(env)) {
+        JNINativeMethod peerOpenMethods[] = {
+            {"openFile", "(Ljava/lang/String;)V", (void *)&CTCDesktopPeer_openGlobal},
+            {"openUri", "(Ljava/lang/String;)V", (void *)&CTCDesktopPeer_openGlobal}
+        };
+        (*env)->RegisterNatives(env, cls, peerOpenMethods, 2);
+    } else if ((*env)->ExceptionOccurred(env)) {
+        (*env)->ExceptionClear(env);
+    }
 }
 
 // JNI_OnLoad
