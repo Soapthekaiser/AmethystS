@@ -55,6 +55,7 @@ public final class Tools {
         // --- BEGIN AMETHYST UPSTREAM LWJGL 3.4.1 COMPLIANCE OVERRIDE ---
         // Programmatically configure modern allocator and turn off native libffi checks
         System.setProperty("org.lwjgl.system.libffi.enabled", "false");
+        System.setProperty("org.lwjgl.system.libffi.initialize", "false"); // Prevents NoSuchFieldError in LibFFI <clinit>
         System.setProperty("org.lwjgl.system.Allocator", "Custom");
         
         // FIX FOR LWJGL / SPVC LINKING FAILURE ON iOS:
