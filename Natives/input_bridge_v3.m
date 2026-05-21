@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/input_bridge_v3.m << 'ENDOFFILE'
 /*
  * V3 input bridge implementation.
  *
@@ -215,26 +214,20 @@ void registerOpenHandler(JNIEnv *env) {
     }
 }
 
-// Lazy GLFW class init - called from the first GLFW callback registration,
-// by which point the GLFW class is guaranteed to be on the classpath.
+// JNI_OnLoad - lazy GLFW class init
 // FindClass fails at JNI_OnLoad time because the LWJGL classloader hasn't
-// loaded org/lwjgl/glfw/GLFW yet. Using the thread's context classloader
-// works around this.
+// loaded org/lwjgl/glfw/GLFW yet. We defer init to the first callback
+// registration, at which point the class is guaranteed to be on the classpath.
 static BOOL glfwClassInitialized = NO;
 
 void JNI_OnLoadGLFW_lazy(JNIEnv* env) {
     if (glfwClassInitialized) return;
-    NSLog(@"[Amethyst-Debug] Entering JNI_OnLoadGLFW (lazy) for LWJGL 3.4.1");
+    NSLog(@"[Amethyst-Debug] Entering JNI_OnLoadGLFW for LWJGL 3.4.1");
 
     // Use the thread's context classloader instead of bare FindClass,
     // which fails when called from a non-JVM-started thread or before
-    // the class has been loaded by LWJGL's classloader.
+    // the class has been loaded by LWJGL's own classloader.
     jclass threadClass = (*env)->FindClass(env, "java/lang/Thread");
-    if ((*env)->ExceptionOccurred(env) || threadClass == NULL) {
-        (*env)->ExceptionClear(env);
-        NSLog(@"[Amethyst-Critical] JNI_OnLoadGLFW_lazy: Failed to find java/lang/Thread!");
-        return;
-    }
     jmethodID currentThread = (*env)->GetStaticMethodID(env, threadClass, "currentThread", "()Ljava/lang/Thread;");
     jmethodID getContextClassLoader = (*env)->GetMethodID(env, threadClass, "getContextClassLoader", "()Ljava/lang/ClassLoader;");
     jobject thread = (*env)->CallStaticObjectMethod(env, threadClass, currentThread);
@@ -280,10 +273,9 @@ void JNI_OnLoadGLFW_lazy(JNIEnv* env) {
     NSLog(@"[Amethyst-Debug] JNI_OnLoadGLFW completed successfully");
 }
 
-// Legacy stub - kept so JNI_OnLoad call site compiles unchanged.
-// Real init now happens lazily from the first GLFW callback registration.
 void JNI_OnLoadGLFW() {
-    // no-op: class not yet loaded at this point, lazy init handles it
+    // Now a no-op: class isn't available at JNI_OnLoad time.
+    // Lazy init happens from the first GLFW callback registration.
 }
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -465,6 +457,7 @@ int callback_SurfaceViewController_touchHotbar(CGFloat x, CGFloat y) {
 
     int barWidth = mcscale(180);
     int barX = (physicalWidth / 2) - (barWidth / 2);
+
     if (x < barX || x >= barX + barWidth) return -1;
 
     return hotbarKeys[(int) MathUtils_map(x, barX, barX + barWidth, 0, 9)];
