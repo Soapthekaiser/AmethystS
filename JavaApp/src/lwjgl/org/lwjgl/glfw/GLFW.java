@@ -787,6 +787,10 @@ public class GLFW
         return lastCallback;
     }
 
+    public static GLFWIMEStatusCallback glfwSetIMEStatusCallback(@NativeType("GLFWwindow *") long window, @Nullable @NativeType("GLFWimestatusfun") GLFWIMEStatusCallbackI cbfun) {
+        return null;
+    }
+
     static boolean isGLFWReady;
     public static boolean glfwInit() {
         if (!isGLFWReady) {
