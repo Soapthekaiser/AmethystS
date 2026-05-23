@@ -1,3 +1,8 @@
+# NOTE
+if you do use this build and want to use the new
+snapshots you must change the rendering backend 
+to vulkan. open gl currently crashes from 26.1-26.2
+
 # Angel Aura Amethyst (iOS)
 [![Development build](https://github.com/AngelAuraMC/Amethyst-iOS/actions/workflows/development.yml/badge.svg?branch=main)](https://github.com/AngelAuraMC/Amethyst-iOS/actions/workflows/development.yml)
 [![Crowdin](https://badges.crowdin.net/angelauramc/localized.svg)](https://crowdin.com/project/angelauramc)
