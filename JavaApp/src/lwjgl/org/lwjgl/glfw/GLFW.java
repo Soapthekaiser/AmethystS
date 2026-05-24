@@ -554,6 +554,14 @@ public class GLFW
         } catch (IllegalAccessException e) {
             // This will never happen since this is accessing itself
         }
+
+        // Initialize native GLFW bridge now that GLFW class is fully loaded
+        // This ensures JNI_OnLoadGLFW_lazy runs with the class available
+        try {
+            nativeInitGLFWBridge();
+        } catch (Throwable t) {
+            System.err.println("[GLFW] nativeInitGLFWBridge failed: " + t);
+        }
     }
 
     private static native long nglfwSetCharCallback(long window, long ptr);
@@ -567,6 +575,7 @@ public class GLFW
     private static native long nglfwSetWindowSizeCallback(long window, long ptr);
     // private static native void nglfwSetInputReady();
     private static native void nglfwSetShowingWindow(long window);
+    private static native void nativeInitGLFWBridge();
 
     /*
      private static void priGlfwSetError(int error) {
