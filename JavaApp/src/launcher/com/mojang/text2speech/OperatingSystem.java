@@ -1,4 +1,4 @@
-package com.mojang;
+package com.mojang.text2speech;
 
 public enum OperatingSystem {
     WINDOWS, OSX, LINUX, UNKNOWN;
