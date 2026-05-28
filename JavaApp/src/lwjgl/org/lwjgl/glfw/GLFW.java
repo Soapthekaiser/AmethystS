@@ -554,14 +554,6 @@ public class GLFW
         } catch (IllegalAccessException e) {
             // This will never happen since this is accessing itself
         }
-
-        // Initialize native GLFW bridge now that GLFW class is fully loaded
-        // This ensures JNI_OnLoadGLFW_lazy runs with the class available
-        try {
-            nativeInitGLFWBridge();
-        } catch (Throwable t) {
-            System.err.println("[GLFW] nativeInitGLFWBridge failed: " + t);
-        }
     }
 
     private static native long nglfwSetCharCallback(long window, long ptr);
@@ -575,7 +567,6 @@ public class GLFW
     private static native long nglfwSetWindowSizeCallback(long window, long ptr);
     // private static native void nglfwSetInputReady();
     private static native void nglfwSetShowingWindow(long window);
-    private static native void nativeInitGLFWBridge();
 
     /*
      private static void priGlfwSetError(int error) {
@@ -796,14 +787,16 @@ public class GLFW
         return lastCallback;
     }
 
-    public static GLFWIMEStatusCallback glfwSetIMEStatusCallback(@NativeType("GLFWwindow *") long window, @Nullable GLFWIMEStatusCallbackI cbfun) {
-        return null;
-    }
-
     static boolean isGLFWReady;
     public static boolean glfwInit() {
         if (!isGLFWReady) {
             mGLFWInitialTime = (double) System.nanoTime();
+            // Initialize native bridge here - class is guaranteed fully loaded by now
+            try {
+                nativeInitGLFWBridge();
+            } catch (Throwable t) {
+                System.err.println("[GLFW] nativeInitGLFWBridge failed: " + t);
+            }
             long __functionAddress = Functions.Init;
             boolean isCalledFromLWJGLX = new Throwable().getStackTrace()[1].getClassName().equals("org.lwjgl.Sys");
             isGLFWReady = invokeI(!isCalledFromLWJGLX, __functionAddress) != 0;
@@ -826,7 +819,7 @@ public class GLFW
         return platform == GLFW_PLATFORM_NULL;
     }
 
-    public static GLFWPreeditCallback glfwSetPreeditCallback(@NativeType("GLFWwindow *") long window, @Nullable GLFWPreeditCallbackI cbfun) {
+    public static GLFWPreeditCallback glfwSetPreeditCallback(@NativeType("GLFWwindow *") long window, @Nullable @NativeType("GLFWpreeditfun") GLFWPreeditCallbackI cbfun) {
         return null;
     }
 
@@ -1109,7 +1102,7 @@ public class GLFW
     public static void glfwPostEmptyEvent() {}
 
     public static int glfwGetInputMode(@NativeType("GLFWwindow *") long window, int mode) {
-        return internalGetWindow(window).inputModes.getOrDefault(mode, 0);
+        return internalGetWindow(window).inputModes.get(mode);
     }
 
     public static void glfwSetInputMode(@NativeType("GLFWwindow *") long window, int mode, int value) {
