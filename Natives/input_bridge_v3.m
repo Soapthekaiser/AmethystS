@@ -36,13 +36,10 @@ NSString* processPath(NSString* path) {
     NSString *prefix = @"file";
     if ([UIApplication.sharedApplication canOpenURL:[NSURL URLWithString:@"shareddocuments://"]] &&
       ![path hasPrefix:@"/var/mobile/Documents"]) {
-        // Prefer opening in Files if containerized
         prefix = @"shareddocuments";
     } else if ([UIApplication.sharedApplication canOpenURL:[NSURL URLWithString:@"filza://"]]) {
-        // Open in Filza if installed
         prefix = @"filza";
     } else if ([UIApplication.sharedApplication canOpenURL:[NSURL URLWithString:@"santander://"]]) {
-        // Open in Santander if installed
         prefix = @"santander";
     }
 
@@ -73,15 +70,10 @@ void openURLGlobal(NSString *path) {
     dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
 }
 
-/**
- * Hooked version of java.lang.UNIXProcess.forkAndExec()
- * which is used to handle the "open" command.
- */
 jint
 hooked_ProcessImpl_forkAndExec(JNIEnv *env, jobject process, jint mode, jbyteArray helperpath, jbyteArray prog, jbyteArray argBlock, jint argc, jbyteArray envBlock, jint envc, jbyteArray dir, jintArray std_fds, jboolean redirectErrorStream) {
     char *pProg = (char *)((*env)->GetByteArrayElements(env, prog, NULL));
 
-    // Here we only handle the "open" command
     if (strcmp(basename(pProg), "open")) {
         (*env)->ReleaseByteArrayElements(env, prog, (jbyte *)pProg, 0);
         return orig_ProcessImpl_forkAndExec(env, process, mode, helperpath, prog, argBlock, argc, envBlock, envc, dir, std_fds, redirectErrorStream);
@@ -95,10 +87,6 @@ hooked_ProcessImpl_forkAndExec(JNIEnv *env, jobject process, jint mode, jbyteArr
     return 0;
 }
 
-/**
- * Hooked version of java.lang.ProcessHandleImpl.isAlive0()
- * which is used to ignore "Operation not permitted"
- */
 jlong hooked_ProcessHandleImpl_isAlive0(JNIEnv *env, jclass clazz, jlong jpid) {
     jlong result = orig_ProcessHandleImpl_isAlive0(env, clazz, jpid);
     if ((*env)->ExceptionOccurred(env)) {
@@ -107,14 +95,11 @@ jlong hooked_ProcessHandleImpl_isAlive0(JNIEnv *env, jclass clazz, jlong jpid) {
     return result;
 }
 
-// Part of awt_bridge
 void CTCClipboard_nQuerySystemClipboard(JNIEnv *env, jclass clazz) {
     if(method_SystemClipboardDataReceived == NULL) {
         class_CTCClipboard = (*env)->NewGlobalRef(env, clazz);
         method_SystemClipboardDataReceived = (*env)->GetStaticMethodID(env, clazz, "systemClipboardDataReceived", "(Ljava/lang/String;Ljava/lang/String;)V");
     }
-    // From Java_net_kdt_pojavlaunch_AWTInputBridge_nativeClipboardReceived
-    // Note: we cannot use main_queue here as it will cause deadlock
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         JNIEnv *env;
         (*runtimeJavaVMPtr)->AttachCurrentThread(runtimeJavaVMPtr, &env, NULL);
@@ -127,7 +112,6 @@ void CTCClipboard_nQuerySystemClipboard(JNIEnv *env, jclass clazz) {
 }
 
 void CTCClipboard_nPutClipboardData(JNIEnv* env, jclass clazz, jstring clipboardData, jstring clipboardDataMime) {
-    // TODO: handle non-text data(?)
     UIKit_accessClipboard(env, CLIPBOARD_COPY, clipboardData);
 }
 
@@ -141,7 +125,6 @@ void hackFix18LWJGL(void *addr) {
     addr = (void *)((uintptr_t)addr & ~PAGE_MASK);
     if(DeviceHasJITFlags(JIT_FLAG_FORCE_MIRRORED)) return;
     if(!mprotect(addr, PAGE_SIZE, PROT_READ | PROT_EXEC)) return;
-    // FIXME: For some reason the one page in liblwjgl.dylib is mapped as r-x/rwx (COW), and recent builds on iOS 18 switches it to r--/rw- causing codesign failure. Here we hack it to map anon page to get r-x back
     char tempPage[PAGE_SIZE];
     memcpy(tempPage, addr, PAGE_SIZE);
     void *result = mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -153,7 +136,6 @@ void hackFix18LWJGL(void *addr) {
 void registerOpenHandler(JNIEnv *env) {
     jclass cls;
 
-    // Hook forkAndExec
     orig_ProcessImpl_forkAndExec = dlsym(RTLD_DEFAULT, "Java_java_lang_UNIXProcess_forkAndExec");
     if (!orig_ProcessImpl_forkAndExec) {
         orig_ProcessImpl_forkAndExec = dlsym(RTLD_DEFAULT, "Java_java_lang_ProcessImpl_forkAndExec");
@@ -166,10 +148,8 @@ void registerOpenHandler(JNIEnv *env) {
     };
     (*env)->RegisterNatives(env, cls, forkAndExecMethod, 1);
 
-    // Hook isAlive0
     cls = (*env)->FindClass(env, "java/lang/ProcessHandleImpl");
     if ((*env)->ExceptionOccurred(env)) {
-        // Java 8 fallback
         (*env)->ExceptionClear(env);
     } else {
         orig_ProcessHandleImpl_isAlive0 = dlsym(RTLD_DEFAULT, "Java_java_lang_ProcessHandleImpl_isAlive0");
@@ -179,10 +159,9 @@ void registerOpenHandler(JNIEnv *env) {
         (*env)->RegisterNatives(env, cls, isAlive0Method, 1);
     }
 
-    // Register CTCClipboard natives (with Java 25 / modern Cacio support)
     cls = (*env)->FindClass(env, "net/java/openjdk/cacio/ctc/CTCClipboard");
     if ((*env)->ExceptionOccurred(env)) {
-        (*env)->ExceptionClear(env); // Clear error state before looking up fallback path
+        (*env)->ExceptionClear(env);
         cls = (*env)->FindClass(env, "com/github/caciocavallosilano/cacio/ctc/CTCClipboard");
     }
     
@@ -195,47 +174,23 @@ void registerOpenHandler(JNIEnv *env) {
     } else if ((*env)->ExceptionOccurred(env)) {
         (*env)->ExceptionClear(env);
     }
-
 }
 
-// JNI_OnLoad - lazy GLFW class init
-// FindClass fails at JNI_OnLoad time because the LWJGL classloader hasn't
-// loaded org/lwjgl/glfw/GLFW yet. We defer init to the first callback
-// registration, at which point the class is guaranteed to be on the classpath.
 static BOOL glfwClassInitialized = NO;
 
-void JNI_OnLoadGLFW_lazy(JNIEnv* env) {
+// Initialize GLFW bridge using the provided class reference directly.
+// This avoids the classloader lookup that fails when called from a different
+// classloader context.
+void JNI_OnLoadGLFW_withClass(JNIEnv* env, jclass glfwClass) {
     if (glfwClassInitialized) return;
-    NSLog(@"[Amethyst-Debug] Entering JNI_OnLoadGLFW for LWJGL 3.4.1");
+    NSLog(@"[Amethyst-Debug] JNI_OnLoadGLFW_withClass: initializing with direct class ref");
 
-    // Use the thread's context classloader instead of bare FindClass,
-    // which fails when called from a non-JVM-started thread or before
-    // the class has been loaded by LWJGL's own classloader.
-    jclass threadClass = (*env)->FindClass(env, "java/lang/Thread");
-    jmethodID currentThread = (*env)->GetStaticMethodID(env, threadClass, "currentThread", "()Ljava/lang/Thread;");
-    jmethodID getContextClassLoader = (*env)->GetMethodID(env, threadClass, "getContextClassLoader", "()Ljava/lang/ClassLoader;");
-    jobject thread = (*env)->CallStaticObjectMethod(env, threadClass, currentThread);
-    jobject classLoader = (*env)->CallObjectMethod(env, thread, getContextClassLoader);
-
-    jclass classLoaderClass = (*env)->FindClass(env, "java/lang/ClassLoader");
-    jmethodID loadClass = (*env)->GetMethodID(env, classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-
-    jstring className = (*env)->NewStringUTF(env, "org/lwjgl/glfw/GLFW");
-    jclass localClass = (jclass)(*env)->CallObjectMethod(env, classLoader, loadClass, className);
-    (*env)->DeleteLocalRef(env, className);
-
-    if ((*env)->ExceptionOccurred(env) || localClass == NULL) {
-        NSLog(@"[Amethyst-Critical] Failed to find class org/lwjgl/glfw/GLFW!");
-        (*env)->ExceptionClear(env);
-        return;
-    }
-
-    vmGlfwClass = (*env)->NewGlobalRef(env, localClass);
+    vmGlfwClass = (*env)->NewGlobalRef(env, glfwClass);
     runtimeJNIEnvPtr = env;
 
     method_internalWindowSizeChanged = (*env)->GetStaticMethodID(env, vmGlfwClass, "internalWindowSizeChanged", "(JII)V");
     if ((*env)->ExceptionOccurred(env) || method_internalWindowSizeChanged == NULL) {
-        NSLog(@"[Amethyst-Warning] Failed to find internalWindowSizeChanged(JII)V. Signature might have changed in LWJGL 3.4.1!");
+        NSLog(@"[Amethyst-Warning] Failed to find internalWindowSizeChanged(JII)V!");
         (*env)->ExceptionClear(env);
     }
 
@@ -257,9 +212,11 @@ void JNI_OnLoadGLFW_lazy(JNIEnv* env) {
     NSLog(@"[Amethyst-Debug] JNI_OnLoadGLFW completed successfully");
 }
 
+void JNI_OnLoadGLFW_lazy(JNIEnv* env) {
+    // No-op: we now initialize via nativeInitGLFWBridge which passes the class directly
+}
+
 void JNI_OnLoadGLFW() {
-    // Now a no-op: class isn't available at JNI_OnLoad time.
-    // Lazy init happens from the first GLFW callback registration.
 }
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -276,20 +233,18 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     return JNI_VERSION_1_4;
 }
 
-// Should be?
 void JNI_OnUnload(JavaVM* vm, void* reserved) {
     runtimeJNIEnvPtr = NULL;
 }
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_GLFW_nativeInitGLFWBridge(JNIEnv* env, jclass cls) {
-    // Called from GLFW static initializer after the class is fully loaded
-    // This ensures FindClass succeeds since we're on the JVM thread with the class available
-    JNI_OnLoadGLFW_lazy(env);
+    // cls IS the GLFW class - use it directly instead of trying to find it
+    NSLog(@"[Amethyst-Debug] nativeInitGLFWBridge called with direct class reference");
+    JNI_OnLoadGLFW_withClass(env, cls);
 }
 
 #define ADD_CALLBACK_WWIN(NAME) \
 JNIEXPORT jlong JNICALL Java_org_lwjgl_glfw_GLFW_nglfwSet##NAME##Callback(JNIEnv * env, jclass cls, jlong window, jlong callbackptr) { \
-    JNI_OnLoadGLFW_lazy(env); \
     void** oldCallback = (void**) &GLFW_invoke_##NAME; \
     GLFW_invoke_##NAME = (GLFW_invoke_##NAME##_func*) (uintptr_t) callbackptr; \
     return (jlong) (uintptr_t) *oldCallback; \
@@ -320,7 +275,6 @@ void pojavPumpEvents(void* window) {
         setInputReady = YES;
         CallbackBridge_nativeSetInputReady(YES);
     }
-    //__android_log_print(ANDROID_LOG_INFO, "input_bridge_v3", "pojavPumpevents %d", eventCounter);
     size_t counter = atomic_load_explicit(&eventCounter, memory_order_acquire);
     if((cLastX != cursorX || cLastY != cursorY) && GLFW_invoke_CursorPos) {
         cLastX = cursorX;
@@ -358,6 +312,7 @@ void pojavPumpEvents(void* window) {
     }
     atomic_store_explicit(&eventCounter, counter, memory_order_release);
 }
+
 void pojavRewindEvents() {
     atomic_store_explicit(&eventCounter, 0, memory_order_release);
 }
@@ -411,19 +366,6 @@ void sendDataFloat(short type, float i1, float i2, short i3, short i4) {
 
 void closeGLFWWindow() {
     NSLog(@"Closing GLFW window");
-
-    /*
-    jclass glfwClazz = (*runtimeJNIEnvPtr)->FindClass(runtimeJNIEnvPtr, "org/lwjgl/glfw/GLFW");
-    assert(glfwClazz != NULL);
-    jmethodID glfwMethod = (*runtimeJNIEnvPtr)->GetStaticMethodID(runtimeJNIEnvPtr, glfwMethod, "glfwSetWindowShouldClose", "(JZ)V");
-    assert(glfwMethod != NULL);
-    
-    (*runtimeJNIEnvPtr)->CallStaticVoidMethod(
-        runtimeJNIEnvPtr,
-        glfwClazz, glfwMethod,
-        (jlong) showingWindow, JNI_TRUE
-    );
-    */
     exit(-1);
 }
 
@@ -488,13 +430,12 @@ void CallbackBridge_nativeSetInputReady(BOOL inputReady) {
     }
 }
 
-BOOL CallbackBridge_nativeSendChar(jchar codepoint /* jint codepoint */) {
+BOOL CallbackBridge_nativeSendChar(jchar codepoint) {
     if (GLFW_invoke_Char && isInputReady) {
         if (isUseStackQueueCall) {
             sendData(EVENT_TYPE_CHAR, codepoint, 0, 0, 0);
         } else {
             GLFW_invoke_Char((void*) showingWindow, (unsigned int) codepoint);
-            // return lwjgl2_triggerCharEvent(codepoint);
         }
         return YES;
     }
@@ -512,13 +453,7 @@ BOOL CallbackBridge_nativeSendCharMods(jchar codepoint, int mods) {
     }
     return NO;
 }
-/*
-JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSendCursorEnter(JNIEnv* env, jclass clazz, jint entered) {
-    if (GLFW_invoke_CursorEnter && isInputReady) {
-        GLFW_invoke_CursorEnter(showingWindow, entered);
-    }
-}
-*/
+
 void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
     if (!GLFW_invoke_CursorPos || !isInputReady) return;
 
@@ -598,7 +533,6 @@ void CallbackBridge_nativeSendKey(int key, int scancode, int action, int mods) {
         }
     }
 
-    // On macOS, Minecraft expects the Command key
     if (key == GLFW_KEY_LEFT_CONTROL) {
         CallbackBridge_nativeSendKey(GLFW_KEY_LEFT_SUPER, 0, action, mods);
     } else if (key == GLFW_KEY_RIGHT_CONTROL) {
@@ -643,8 +577,6 @@ void CallbackBridge_nativeSendScreenSize(int width, int height) {
             }
         }
     }
-    
-    // return (isInputReady && (GLFW_invoke_FramebufferSize || GLFW_invoke_WindowSize));
 }
 
 void CallbackBridge_nativeSendScroll(CGFloat xoffset, CGFloat yoffset) {
