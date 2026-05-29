@@ -87,6 +87,19 @@
     [self presentViewController:picker animated:YES completion:nil];
 }
 
+- (void)actionLoginLocal:(UIView *)sender {
+    UIAlertController *controller = [UIAlertController alertControllerWithTitle:localize(@"Sign in", nil) message:localize(@"login.option.local", nil) preferredStyle:UIAlertControllerStyleAlert];
+    [controller addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = localize(@"login.alert.field.username", nil);
+    }];
+    [controller addAction:[UIAlertAction actionWithTitle:localize(@"OK", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        id callback = ^(id status, BOOL success) { self.whenItemSelected(); [self dismissViewControllerAnimated:YES completion:nil]; };
+        [[[LocalAuthenticator alloc] initWithInput:controller.textFields[0].text] loginWithCallback:callback];
+    }]];
+    [controller addAction:[UIAlertAction actionWithTitle:localize(@"Cancel", nil) style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:controller animated:YES completion:nil];
+}
+
 - (void)actionLoginMicrosoft:(UITableViewCell *)sender {
     NSURL *url = [NSURL URLWithString:@"https://login.live.com/oauth20_authorize.srf?client_id=00000000402b5328&response_type=code&scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL&redirect_url=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf"];
     self.authVC = [[ASWebAuthenticationSession alloc] initWithURL:url callbackURLScheme:@"ms-xal-00000000402b5328" completionHandler:^(NSURL * _Nullable callbackURL, NSError * _Nullable error) {
